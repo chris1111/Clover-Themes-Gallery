@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clover Themes</title>
+    <!-- JSZip Library for local zip creation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         /* Copyright © 2026 chris1111 , All Rights Reserved. */
         :root {
@@ -182,15 +184,17 @@
             transition: all 0.2s ease;
             white-space: nowrap;
             flex-grow: 1;
+            border: 1px solid transparent;
         }
-        .btn-view { background-color: transparent; color: var(--text-primary); border: 1px solid var(--border-color); }
+        .btn-view { background-color: transparent; color: var(--text-primary); border-color: var(--border-color); }
         .btn-view:hover { background-color: var(--hover-bg); border-color: var(--accent-purple); }
         .btn-download {
             background-color: var(--accent-green);
             color: #ffffff;
             border: 1px solid rgba(240, 246, 252, 0.1);
         }
-        .btn-download:hover { background-color: var(--accent-green-hover); }
+        .btn-download:hover:not(:disabled) { background-color: var(--accent-green-hover); }
+        .btn-download:disabled { cursor: wait; opacity: 0.7; }
 
         .spinner {
             width: 24px; height: 24px;
@@ -215,66 +219,36 @@
         }
         .error { color: var(--error-color); }
 
-        /* ==========================================
-           BACK TO TOP BUTTON
-           ========================================== */
+        /* BACK TO TOP BUTTON */
         #back-to-top {
             position: fixed;
-            bottom: 30px;
-            right: 30px;
-            width: 52px;
-            height: 52px;
+            bottom: 30px; right: 30px;
+            width: 52px; height: 52px;
             border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             cursor: pointer;
             border: 1px solid rgba(240, 246, 252, 0.15);
             background: radial-gradient(circle at 30% 30%, #2ea043 0%, #238636 60%, #1a6b29 100%);
-            box-shadow:
-                0 4px 14px rgba(0, 0, 0, 0.5),
-                0 0 0 0 rgba(46, 160, 67, 0.5);
-            opacity: 0;
-            visibility: hidden;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(46, 160, 67, 0.5);
+            opacity: 0; visibility: hidden;
             transform: translateY(20px) scale(0.8);
-            transition: opacity 0.35s ease, transform 0.35s ease,
-                        box-shadow 0.3s ease, background 0.3s ease;
+            transition: opacity 0.35s ease, transform 0.35s ease, box-shadow 0.3s ease, background 0.3s ease;
             z-index: 9999;
-            user-select: none;
             animation: bttPulse 2.6s infinite alternate;
         }
-
-        #back-to-top.show {
-            opacity: 1;
-            visibility: visible;
-            transform: translateY(0) scale(1);
-        }
-
+        #back-to-top.show { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
         #back-to-top:hover {
             background: radial-gradient(circle at 30% 30%, #46c75d 0%, #2ea043 60%, #238636 100%);
-            box-shadow:
-                0 6px 22px rgba(0, 0, 0, 0.6),
-                0 0 18px rgba(46, 160, 67, 0.85),
-                0 0 36px rgba(46, 160, 67, 0.45);
+            box-shadow: 0 6px 22px rgba(0,0,0,0.6), 0 0 18px rgba(46,160,67,0.85), 0 0 36px rgba(46,160,67,0.45);
             transform: translateY(-3px) scale(1.05);
         }
-
         #back-to-top:active { transform: translateY(0) scale(0.96); }
-
-        #back-to-top svg {
-            width: 24px;
-            height: 24px;
-            fill: #ffffff;
-            filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4));
-            transition: transform 0.3s ease;
-        }
+        #back-to-top svg { width: 24px; height: 24px; fill: #ffffff; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4)); transition: transform 0.3s ease; }
         #back-to-top:hover svg { transform: translateY(-2px); }
-
         @keyframes bttPulse {
             0%   { box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 0 0   rgba(46,160,67,0.45); }
             100% { box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 0 12px rgba(46,160,67,0);   }
         }
-
         @media (max-width: 480px) {
             #back-to-top { bottom: 20px; right: 20px; width: 46px; height: 46px; }
             #back-to-top svg { width: 20px; height: 20px; }
@@ -373,11 +347,13 @@
     
     const statusDiv = document.getElementById("status");
     const listDiv = document.getElementById("folder-list");
+    
+    // Store all file lists for each theme so we can zip them locally later
+    const themeFilesMap = {};
 
-    function createFolderRow(folderName, folderUrl, imgUrl) {
+    function createFolderRow(folderName, folderUrl, imgUrl, files) {
         const itemDiv = document.createElement("div");
         itemDiv.className = "folder-item";
-        const downloadUrl = `https://download-directory.github.io/?url=${folderUrl}`;
         
         let previewHtml = '';
         if (imgUrl) {
@@ -404,7 +380,7 @@
                 </div>
                 <div class="actions">
                     <a href="${folderUrl}" target="_blank" class="btn btn-view">View</a>
-                    <a href="${downloadUrl}" target="_blank" class="btn btn-download">Download</a>
+                    <button class="btn btn-download" data-folder="${folderName}">Download</button>
                 </div>
             </div>
         `;
@@ -432,37 +408,52 @@
             if (response.status === 403) throw new Error("GitHub API rate limit exceeded.");
             if (!response.ok) throw new Error(`GitHub API Error: ${response.status}`);
             const data = await response.json();
+            
             const foldersMap = new Map();
+            
             data.tree.forEach(item => {
                 const parts = item.path.split('/');
+                
+                // Check if it's a root folder or a file inside a root folder (or deeper)
                 if (parts.length === 1 && item.type === 'tree') {
-                    if (!foldersMap.has(parts[0])) foldersMap.set(parts[0], null);
-                } else if (parts.length === 2 && item.type === 'blob') {
+                    if (!foldersMap.has(parts[0])) foldersMap.set(parts[0], { imgUrl: null, files: [] });
+                } else if (parts.length > 1 && item.type === 'blob') {
                     const folderName = parts[0];
-                    const fileName = parts[1];
-                    if (/\.(png|jpg|jpeg|gif|svg|webp)$/i.test(fileName)) {
-                        if (!foldersMap.has(folderName)) foldersMap.set(folderName, null);
-                        const currentImg = foldersMap.get(folderName);
+                    if (!foldersMap.has(folderName)) foldersMap.set(folderName, { imgUrl: null, files: [] });
+                    
+                    // Save file path to the folder's file list for local zipping
+                    foldersMap.get(folderName).files.push(item);
+
+                    // Image preview logic (only for files directly in the root folder)
+                    if (parts.length === 2 && /\.(png|jpg|jpeg|gif|svg|webp)$/i.test(parts[1])) {
+                        const fileName = parts[1];
+                        const currentImg = foldersMap.get(folderName).imgUrl;
                         if (!currentImg || /screenshot|preview|theme/i.test(fileName)) {
                             const encodedFolderName = encodeURIComponent(folderName);
                             const encodedFileName = encodeURIComponent(fileName);
                             const imgUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branchName}/${encodedFolderName}/${encodedFileName}`;
-                            foldersMap.set(folderName, imgUrl);
+                            foldersMap.get(folderName).imgUrl = imgUrl;
                         }
                     }
                 }
             });
+            
             statusDiv.innerHTML = "";
             if (foldersMap.size === 0) {
                 statusDiv.innerHTML = "No folders found in the root directory.";
                 return;
             }
+
             const sortedFolders = Array.from(foldersMap.keys()).sort((a, b) => a.localeCompare(b));
+
             sortedFolders.forEach(folderName => {
-                const imgUrl = foldersMap.get(folderName);
+                const folderData = foldersMap.get(folderName);
                 const folderUrl = `https://github.com/${repoOwner}/${repoName}/tree/${branchName}/${folderName}`;
-                createFolderRow(folderName, folderUrl, imgUrl);
+                // Save to global map for the click event listener
+                themeFilesMap[folderName] = folderData.files;
+                createFolderRow(folderName, folderUrl, folderData.imgUrl, folderData.files);
             });
+
         } catch (error) {
             console.error(error);
             statusDiv.className = "error";
@@ -487,10 +478,73 @@
         }
     }
 
+    // ==========================================
+    // 3. LOCAL ZIP GENERATION (JSZip)
+    // ==========================================
+    async function downloadThemeZip(folderName, btn) {
+        const files = themeFilesMap[folderName];
+        if (!files || files.length === 0) return;
+
+        const originalText = btn.innerText;
+        btn.innerText = "Zipping...";
+        btn.disabled = true;
+
+        try {
+            const zip = new JSZip();
+            // Create a folder inside the zip so it extracts nicely
+            const themeFolder = zip.folder(folderName);
+
+            // Fetch all files concurrently
+            const fetchPromises = files.map(file => {
+                const fileUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branchName}/${file.path}`;
+                return fetch(fileUrl)
+                    .then(res => {
+                        if (!res.ok) throw new Error(`Failed to fetch ${file.path}`);
+                        return res.blob();
+                    })
+                    .then(blob => {
+                        // Remove the "ThemeName/" part from the path for the inside of the zip
+                        const relativePath = file.path.substring(folderName.length + 1);
+                        themeFolder.file(relativePath, blob);
+                    });
+            });
+
+            await Promise.all(fetchPromises);
+
+            // Generate the zip file as a Blob
+            const content = await zip.generateAsync({ type: "blob" });
+            
+            // Create a download link and click it programmatically
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${folderName}.zip`; // EXACTLY Atomic.zip
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+        } catch (error) {
+            console.error("Zip error:", error);
+            alert("Failed to create zip. You might be rate-limited by GitHub. Please wait a minute and try again.");
+        } finally {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // Event listener for all download buttons
+    listDiv.addEventListener('click', function(e) {
+        if (e.target && e.target.classList.contains('btn-download')) {
+            const folderName = e.target.getAttribute('data-folder');
+            downloadThemeZip(folderName, e.target);
+        }
+    });
+
     fetchFolders();
 
     // ==========================================
-    // 3. BACK TO TOP BEHAVIOR
+    // 4. BACK TO TOP BEHAVIOR
     // ==========================================
     const backToTopBtn = document.getElementById('back-to-top');
 
@@ -507,7 +561,6 @@
     toggleBackToTop();
 
     function scrollToTop() {
-        // Smooth scroll that works even in older browsers
         const startY = window.scrollY;
         const duration = 600;
         const startTime = performance.now();
