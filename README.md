@@ -18,7 +18,7 @@ For each card, it sets the image URL to start downloading.
 	•	If an image fails to load (or doesn't exist), it catches the error and displays a clean "No preview available" text, preventing broken image icons.
 
 5. The Download Mechanism
-When you click the green "Download" button, it doesn't try to zip the file locally in your browser (which would crash the page). Instead, it sends the folder's URL to a trusted external tool called download-directory.github.io. That tool securely fetches the folder from GitHub, zips it up on its server, and sends the ZIP file straight to your downloads folder.
+When you click the green "Download" button, we have local ZIP downloads for theme folders in-browser ZIP generation using JSZip. The folder tree parsing now keeps each theme’s full file list (including nested files), stores it in a map, and uses delegated button clicks to fetch files, build a per-theme archive, and download it as `<theme>.zip`. The download button now shows a zipping state and is temporarily disabled, with clearer failure messaging if GitHub fetches fail or are rate-limited.
 
 - In short: It grabs a master list of files from GitHub -> matches themes to their screenshots -> builds beautiful dark-mode cards -> and routes downloads through a dedicated ZIP service!
 
